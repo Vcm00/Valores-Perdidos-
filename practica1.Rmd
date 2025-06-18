@@ -1,0 +1,144 @@
+---
+title: "Pr\u00e1cticas de Valores Perdidos"
+author: "Brian Norman Pe\u00f1a Calero"
+output: html_document
+---
+
+# Ejercicio 1: Imputaci\u00f3n de Respuestas
+
+## Contexto
+
+El archivo `Ejercicio1.dat` contiene informaci\u00f3n de 779 estudiantes de carreras t\u00e9cnicas. Las variables recogidas incluyen la nota media de rendimiento (`REND`), horas de estudio (`HESTUDIO`), motivaci\u00f3n (`MOT`), sexo (`SEXO`), nota de selectividad (`SELEC`), n\u00famero de estudiantes por aula (`STUAULA`) y gasto anual (`GASTO`).
+
+El prop\u00f3sito de este ejercicio es examinar el patr\u00f3n de valores perdidos y evaluar si la p\u00e9rdida en `REND` puede considerarse completamente aleatoria (MCAR).
+
+### 1.1 Patr\u00f3n de datos faltantes
+
+Usando la funci\u00f3n `md.pattern` del paquete `mice`, se observa que existen **172 casos completos**.
+
+### 1.2 Patr\u00f3n m\u00e1s frecuente
+
+El patr\u00f3n de valores perdidos m\u00e1s habitual excluyendo los casos completos corresponde a la variable `MOT`, con **103 casos** que presentan \u00fanicamente esta variable perdida. Al eliminar `MOT`, el n\u00famero total de casos completos asciende a **275**.
+
+### 1.3 Evaluaci\u00f3n de MCAR para `REND`
+
+Se gener\u00f3 una variable binaria `REND_obs` (1 = dato presente, 0 = dato ausente). Las comparaciones entre grupos mostraron que los estudiantes con valores perdidos en `REND` difieren significativamente en `GASTO`, `MOT`, `HESTUDIO` y `SELEC`, mientras que no se detectaron diferencias en `STUAULA` ni asociaci\u00f3n con `SEXO`. Estos hallazgos indican que la p\u00e9rdida de `REND` **no puede asumirse como MCAR**.
+
+### 1.4 Diferencias en horas de estudio
+
+La media de `HESTUDIO` es **51.29** para quienes poseen valor v\u00e1lido en `REND` y **30.76** para quienes lo tienen perdido. Esta diferencia resulta significativa (t(33.58) = -4.45, p \u003c .001, d = -0.78), reforzando la evidencia de un mecanismo distinto de MCAR.
+
+### 1.5 Visualizaci\u00f3n univariada de ausencias
+
+Mediante `vis_miss()` del paquete `naniar`, se aprecia que `MOT` es la variable con mayor proporci\u00f3n de datos faltantes, alrededor del **45.2\%**.
+
+# Ejercicio 2: Mecanismos de Valores Perdidos
+
+## Introducci\u00f3n
+
+En `Ejercicio2.dat` se disponen dos variables: cociente intelectual (`IQ`) y rendimiento (`REND`). Se asume que la media poblacional de `REND` es \u03bc = 4.89, la desviaci\u00f3n t\u00edpica \u03c3 = 2.34 y la correlaci\u00f3n poblacional con `IQ` es \u03c1 = 0.50.
+
+El objetivo es generar un 50\% de valores perdidos en `REND` bajo tres mecanismos: MCAR, MAR y MNAR, y estudiar la recuperaci\u00f3n de los par\u00e1metros mediante 1000 r\u00e9plicas.
+
+### 2.1 Justificaci\u00f3n de los mecanismos
+
+- **MCAR**: la ausencia en `REND` se produce mediante una variable aleatoria uniforme independiente de cualquier otra informaci\u00f3n, por lo que la probabilidad de p\u00e9rdida es completamente aleatoria.
+- **MAR**: la probabilidad de p\u00e9rdida en `REND` depende de los cuartiles de `IQ` (0.80, 0.60, 0.40 y 0.20), pero no del propio valor de `REND`.
+- **MNAR**: la probabilidad de falta est\u00e1 condicionada a los cuartiles de `REND` (0.80, 0.60, 0.40 y 0.20), es decir, depende de la variable con ausencias.
+
+### 2.2 Resultados obtenidos
+
+A continuaci\u00f3n se resumen las medias de 1000 r\u00e9plicas para cada mecanismo:
+
+| Mecanismo | Media | Desviaci\u00f3n T\u00edpica | Correlaci\u00f3n Rend-CI |
+|-----------|------:|---------------------:|---------------------:|
+| MAR | 5.387 | 2.281 | 0.456 |
+| MCAR | 4.889 | 2.340 | 0.494 |
+| MNAR | 5.859 | 2.122 | 0.457 |
+| Poblacional | 4.89 | 2.34 | 0.50 |
+
+### 2.3 Discusi\u00f3n
+
+Bajo **MCAR**, las estimaciones se aproximan a los par\u00e1metros poblacionales, ya que la p\u00e9rdida aleatoria no introduce sesgos al trabajar con casos completos. Con **MAR** se observa cierta sobreestimaci\u00f3n de la media de `REND` y una leve subestimaci\u00f3n de la correlaci\u00f3n. En el escenario **MNAR** se producen las mayores distorsiones: la media de `REND` queda inflada y la desviaci\u00f3n t\u00edpica disminuye, evidenciando el sesgo introducido al depender la p\u00e9rdida del propio valor de `REND`.
+
+# Anexo: C\u00f3digo en R
+
+```r
+## Carga de paquetes
+library(tidyverse)
+library(mice)
+
+## Importar datos del Ejercicio 1
+carreras <- read_delim("Ejercicio1.dat")
+md.pattern(carreras)
+
+## Crear variable indicadora y comparaciones de medias
+carreras$REND_obs <- ifelse(is.na(carreras$REND), 0, 1)
+carreras |>
+  pivot_longer(cols = c(SELEC:GASTO, HESTUDIO:MOT), names_to = "Var_cont", values_to = "valores") |>
+  group_nest(Var_cont) |>
+  mutate(test = map(data, ~ statsExpressions::two_sample_test(data = .x, x = REND_obs, y = valores, effsize.type = "d"))) |>
+  unnest(test) |>
+  select(Var_cont, mean.parameter1:p.value, cohen_size = estimate) |>
+  insight::format_table() |>
+  insight::export_table()
+
+tabla_sexo <- table(carreras$SEXO, carreras$REND_obs)
+chisq.test(tabla_sexo)
+
+## Visualizaci\u00f3n univariada y resumen
+carreras |>
+  select(-REND_obs) |>
+  naniar::vis_miss()
+
+carreras |>
+  select(-REND_obs) |>
+  naniar::miss_var_summary()
+
+## Importar datos del Ejercicio 2
+rendimiento <- read_delim("Ejercicio2.dat")
+
+generar_missing <- function(data, mecanismo = c("MCAR", "MAR", "MNAR")) {
+  mecanismo <- match.arg(mecanismo)
+  if (mecanismo == "MCAR") {
+    prob <- runif(nrow(data))
+    data$REND[prob < 0.5] <- NA
+  }
+  if (mecanismo == "MAR") {
+    q_iq <- ntile(data$IQ, 4)
+    probs <- c(0.8, 0.6, 0.4, 0.2)[q_iq]
+    data$REND[runif(nrow(data)) < probs] <- NA
+  }
+  if (mecanismo == "MNAR") {
+    q_rend <- ntile(data$REND, 4)
+    probs <- c(0.8, 0.6, 0.4, 0.2)[q_rend]
+    data$REND[runif(nrow(data)) < probs] <- NA
+  }
+  data
+}
+
+resumen_estadistico <- function(data) {
+  data <- drop_na(data, REND)
+  tibble(mean = mean(data$REND), sd = sd(data$REND), cor = cor(data$REND, data$IQ))
+}
+
+replicar <- function(mecanismo, n_rep = 1000, datos_originales) {
+  replicate(n_rep, {
+    datos_miss <- generar_missing(datos_originales, mecanismo)
+    resumen_estadistico(datos_miss)
+  }, simplify = FALSE) |> bind_rows()
+}
+
+resultados_mcar <- replicar("MCAR", datos_originales = rendimiento)
+resultados_mar  <- replicar("MAR", datos_originales = rendimiento)
+resultados_mnar <- replicar("MNAR", datos_originales = rendimiento)
+
+tabla_replicas <- bind_rows(MCAR = resultados_mcar, MAR = resultados_mar, MNAR = resultados_mnar, .id = "Mecanismo") %>%
+  mutate(Replica = rep(paste0("R", 1:1000), 3)) %>%
+  relocate(Mecanismo, Replica)
+
+tabla_replicas |>
+  group_by(Mecanismo) |>
+  summarise(across(where(is.numeric), mean))
+```
+
